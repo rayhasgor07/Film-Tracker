@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Film Tracker</title>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700;900&family=DM+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="app" id="app">
+
+  <!-- API KEY SCREEN -->
+  <div class="api-screen" id="api-screen">
+    <div class="api-logo">🎬 Film Tracker</div>
+    <div class="api-sub">Discover & Track · All Movies</div>
+    <div class="api-card">
+      <h2>Connect to TMDB</h2>
+      <p>This app pulls real films via The Movie Database API. You need a free API key to get started.</p>
+      <ol class="api-steps">
+        <li>Go to <a href="https://www.themoviedb.org/signup" target="_blank">themoviedb.org/signup</a></li>
+        <li>Sign in → Settings → API</li>
+        <li>Request an API key (free, instant)</li>
+        <li>Copy and paste it below</li>
+      </ol>
+      <br>
+      <input class="api-input" id="api-key-input" type="text" placeholder="Paste your TMDB API key here…">
+      <button class="api-btn" onclick="submitApiKey()">Connect →</button>
+      <div class="api-error" id="api-error">Invalid key or network error. Please try again.</div>
+    </div>
+  </div>
+
+  <!-- MAIN APP (hidden until key set) -->
+  <div id="main-app" style="display:none; flex-direction:column; flex:1;">
+    <div class="header">
+      <div class="header-top">
+        <div>
+          <div class="app-title">🎬 Film Tracker</div>
+          <div class="app-sub">TMDB · <span id="hdr-total">—</span> films loaded</div>
+        </div>
+        <div class="stats-wrap">
+          <div class="stat-chip">Watched <b id="hdr-watched">0</b></div>
+          <div class="stat-chip"><b id="hdr-pct">0</b>%</div>
+        </div>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-bar" id="prog-bar" style="width:0%"></div>
+      </div>
+      <div class="search-row">
+        <div class="search-wrap">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6">
+            <circle cx="6.5" cy="6.5" r="4.5"/><path d="M10 10l3 3"/>
+          </svg>
+          <input class="search-input" id="search" placeholder="Search title, cast, director…" oninput="handleSearch()">
+        </div>
+        <button onclick="switchLang()" id="lang-btn" style="background:var(--gold-dim);border:1px solid var(--border2);color:var(--gold);padding:5px 12px;border-radius:20px;font-size:12px;cursor:pointer;font-family:'DM Sans',sans-serif;">🎬 Bollywood</button>
+        <button class="filter-toggle-btn" id="filter-btn" onclick="toggleFilters()">⚙ Filter</button>
+      </div>
+      <div class="tabs">
+        <div class="tab active" id="tab-all" onclick="switchTab('all')">All</div>
+        <div class="tab" id="tab-watched" onclick="switchTab('watched')">Watched</div>
+        <div class="tab" id="tab-favs" onclick="switchTab('favs')">❤ Favs</div>
+        <div class="tab" id="tab-todo" onclick="switchTab('todo')">Watchlist</div>
+      </div>
+    </div>
+
+    <div class="filter-panel" id="filter-panel">
+      <div class="filter-section">
+        <div class="filter-label">Genre</div>
+        <div class="pill-row" id="genre-pills"></div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-label">Era</div>
+        <div class="pill-row" id="era-pills"></div>
+      </div>
+      <div class="filter-section">
+        <div class="filter-label">Min TMDB Rating: <span id="rating-display">0.0</span></div>
+        <div class="range-row">
+          <input type="range" min="0" max="9" step="0.5" value="0" id="min-rating"
+            oninput="document.getElementById('rating-display').textContent=parseFloat(this.value).toFixed(1);applyFilters()">
+          <div class="range-val" id="rating-val">0.0</div>
+        </div>
+      </div>
+      <div class="filter-actions">
+        <button class="clear-btn" onclick="clearFilters()">Clear all</button>
+      </div>
+    </div>
+
+    <div class="count-bar">
+      <span id="count-label">Loading…</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button class="change-key-btn" onclick="changeKey()">Change key</button>
+        <select class="sort-sel" id="sort-sel" onchange="applyFilters()">
+          <option value="year_desc">Newest first</option>
+          <option value="year_asc">Oldest first</option>
+          <option value="rating">Rating ↓</option>
+          <option value="alpha">A → Z</option>
+          <option value="popularity">Popularity</option>
+        </select>
+      </div>
+    </div>
+
+    <div id="list-container" style="flex:1"></div>
+    <div id="load-more-wrap" style="padding:16px;text-align:center;display:none">
+      <button onclick="loadMoreMovies()" style="padding:10px 28px;background:var(--gold-dim);border:1px solid var(--border2);color:var(--gold);border-radius:10px;font-size:13px;cursor:pointer;font-family:'DM Sans',sans-serif;">
+        Load more films
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- MODAL -->
+<div class="modal-overlay" id="modal-overlay" onclick="handleOverlayClick(event)">
+  <div class="modal-sheet" id="modal-sheet">
+    <div class="modal-drag-area" onclick="closeModal()"><div class="modal-drag"></div></div>
+    <div style="position:relative">
+      <button class="close-modal-btn" onclick="closeModal()">×</button>
+    </div>
+    <div id="modal-backdrop" class="modal-backdrop" style="display:none">
+      <img id="m-backdrop" src="" alt="">
+      <div class="modal-backdrop-gradient"></div>
+    </div>
+    <div class="modal-inner">
+      <div class="modal-header">
+        <div class="modal-poster" id="m-poster">
+          <span class="modal-poster-fallback" id="m-poster-fallback"></span>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="modal-title" id="m-title"></div>
+          <div class="modal-subtitle" id="m-meta"></div>
+        </div>
+      </div>
+      <div class="genre-tags" id="m-genres"></div>
+      <hr class="modal-divider">
+      <div class="modal-review-text" id="m-review"></div>
+      <div class="modal-actions">
+        <div class="modal-action-btn" id="m-watch-btn" onclick="modalToggleWatch()"></div>
+        <div class="modal-action-btn" id="m-fav-btn" onclick="modalToggleFav()"></div>
+      </div>
+      <div class="section-label">My rating</div>
+      <div class="star-row" id="m-stars"></div>
+      <div class="section-label">My notes</div>
+      <textarea class="my-note" id="m-note" placeholder="Write your thoughts…" oninput="saveNote()"></textarea>
+    </div>
+  </div>
+</div>
+<script src="script.js"></script>
+</body>
+</html>
