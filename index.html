@@ -18,7 +18,7 @@
       <h2>Connect to TMDB</h2>
       <p>This app pulls real films via The Movie Database API. You need a free API key to get started.</p>
       <ol class="api-steps">
-        <li>Go to <a href="https://www.themoviedb.org/signup" target="_blank">themoviedb.org/signup</a></li>
+        <li>Go to <a href="https://www.themoviedb.org/signup" target="_blank" rel="noopener noreferrer">themoviedb.org/signup</a></li>
         <li>Sign in → Settings → API</li>
         <li>Request an API key (free, instant)</li>
         <li>Copy and paste it below</li>
@@ -131,13 +131,35 @@
         </div>
       </div>
       <div class="genre-tags" id="m-genres"></div>
+
+      <!-- Extended info: tagline, info chips (loaded async) -->
+      <div id="m-extended"></div>
+
       <hr class="modal-divider">
       <div class="modal-review-text" id="m-review"></div>
       <div class="modal-actions">
         <div class="modal-action-btn" id="m-watch-btn" onclick="modalToggleWatch()"></div>
         <div class="modal-action-btn" id="m-fav-btn" onclick="modalToggleFav()"></div>
       </div>
-      <div class="section-label">My rating</div>
+
+      <!-- Trailer button (shown if available) -->
+      <div id="m-trailer-section" style="display:none;margin-bottom:18px;">
+        <button class="trailer-btn" id="m-trailer-btn">▶ Watch Trailer on YouTube</button>
+      </div>
+
+      <!-- Cast section (loaded async) -->
+      <div id="m-cast-section" style="display:none">
+        <div class="section-label">Cast</div>
+        <div class="cast-scroll" id="m-cast-list"></div>
+      </div>
+
+      <!-- Streaming providers (loaded async) -->
+      <div id="m-watch-section" style="display:none;margin-top:18px;">
+        <div class="section-label">Where to Watch</div>
+        <div class="providers-row" id="m-providers-list"></div>
+      </div>
+
+      <div class="section-label" style="margin-top:18px;">My rating</div>
       <div class="star-row" id="m-stars"></div>
       <div class="section-label">My notes</div>
       <textarea class="my-note" id="m-note" placeholder="Write your thoughts…" oninput="saveNote()"></textarea>

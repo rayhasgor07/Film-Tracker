@@ -2,6 +2,7 @@
 const TMDB_BASE = "https://api.themoviedb.org/3";
 const IMG_BASE = "https://image.tmdb.org/t/p/w185";
 const BACKDROP_BASE = "https://image.tmdb.org/t/p/w780";
+const CAST_IMG_BASE = "https://image.tmdb.org/t/p/w185";
 const BOLLYWOOD_REGION = "IN";
 const HINDI_LANG = "hi";
 const ENGLISH_LANG = "en";
@@ -27,6 +28,8 @@ let isFetching = false;
 let searchTimeout = null;
 let isSearchMode = false;
 let searchQuery = "";
+// Cache for movie details (cast, runtime, etc.)
+const detailsCache = {};
 
 let userState = { watched:{}, favs:{}, notes:{}, ratings:{}, tab:"all", genreFilter:"", eraFilter:"", minRating:0 };
 try { const s = localStorage.getItem("bw_tmdb_v1"); if(s) Object.assign(userState, JSON.parse(s)); } catch(e){}
@@ -45,7 +48,6 @@ function submitApiKey() {
   const key = document.getElementById("api-key-input").value.trim();
   if (!key) return;
   document.getElementById("api-error").style.display = "none";
-  // Test the key
   fetch(`${TMDB_BASE}/configuration?api_key=${key}`)
     .then(r => { if(!r.ok) throw new Error("bad key"); return r.json(); })
     .then(() => {
@@ -74,7 +76,7 @@ function changeKey() {
   document.getElementById("main-app").style.display = "none";
 }
 
-// ── FETCH BOLLYWOOD MOVIES ──
+// ── FETCH MOVIES ──
 async function fetchMovies(page = 1, reset = false) {
   if (isFetching) return;
   isFetching = true;
@@ -91,7 +93,6 @@ async function fetchMovies(page = 1, reset = false) {
   }
 
   try {
-    // Fetch multiple pages in parallel for a richer initial load
     const pagesToFetch = reset ? [1, 2, 3] : [page];
     const results = await Promise.all(pagesToFetch.map(p =>
       fetch(`${TMDB_BASE}/discover/movie?api_key=${apiKey}&with_original_language=${currentLang}&region=${BOLLYWOOD_REGION}&primary_release_date.gte=1990-01-01&sort_by=vote_count.desc&vote_count.gte=100&page=${p}`)
@@ -130,6 +131,24 @@ async function loadMoreMovies() {
   }
 }
 
+// ── FETCH FULL MOVIE DETAILS (cast, crew, runtime, tagline, etc.) ──
+async function fetchMovieDetails(id) {
+  if (detailsCache[id]) return detailsCache[id];
+  try {
+    const [details, credits, videos, watchProviders] = await Promise.all([
+      fetch(`${TMDB_BASE}/movie/${id}?api_key=${apiKey}&language=en-US`).then(r => r.json()),
+      fetch(`${TMDB_BASE}/movie/${id}/credits?api_key=${apiKey}&language=en-US`).then(r => r.json()),
+      fetch(`${TMDB_BASE}/movie/${id}/videos?api_key=${apiKey}&language=en-US`).then(r => r.json()),
+      fetch(`${TMDB_BASE}/movie/${id}/watch/providers?api_key=${apiKey}`).then(r => r.json()),
+    ]);
+    const result = { details, credits, videos, watchProviders };
+    detailsCache[id] = result;
+    return result;
+  } catch(e) {
+    return null;
+  }
+}
+
 // ── SEARCH ──
 function handleSearch() {
   const q = document.getElementById("search").value.trim();
@@ -147,7 +166,7 @@ function handleSearch() {
   }, 400);
 }
 
-// ── LANGUAGE SWITCH (BOLLYWOOD / HOLLYWOOD) ──
+// ── LANGUAGE SWITCH ──
 function switchLang() {
   currentLang = currentLang === "hi" ? "en" : "hi";
   document.getElementById("lang-btn").textContent = currentLang === "hi" ? "🎬 Bollywood" : "🎬 Hollywood";
@@ -167,7 +186,7 @@ async function searchTMDB(query, page = 1) {
     const filtered = (data.results || []).filter(m => {
       const lang = m.original_language;
       const year = m.release_date ? parseInt(m.release_date.substr(0,4)) : 0;
-      return lang === "hi" && year >= 1990;
+      return lang === currentLang && year >= 1990;
     });
 
     if (page === 1) {
@@ -236,8 +255,6 @@ function renderList(list) {
     }
 
     const genres = (m.genre_ids || []).map(id => GENRE_MAP[id]).filter(Boolean).slice(0,2);
-    const primaryGenre = genres[0] || "Drama";
-    const genreClass = "tag-" + primaryGenre.toLowerCase().replace(/[^a-z]/g,"");
     const rating = m.vote_average ? m.vote_average.toFixed(1) : "—";
     const w = !!userState.watched[m.id];
     const f = !!userState.favs[m.id];
@@ -277,7 +294,7 @@ function toggleW(id) { userState.watched[id] = !userState.watched[id]; saveUserS
 function toggleF(id) { userState.favs[id] = !userState.favs[id]; saveUserState(); applyFilters(); if(modalId===id) refreshModalButtons(id); }
 
 // ── MODAL ──
-function openModal(id) {
+async function openModal(id) {
   const m = movies.find(x => x.id === id);
   if (!m) return;
   modalId = id;
@@ -289,7 +306,6 @@ function openModal(id) {
 
   // Poster
   const posterEl = document.getElementById("m-poster");
-  const fallback = document.getElementById("m-poster-fallback");
   if (m.poster_path) {
     posterEl.innerHTML = `<img src="${IMG_BASE}${m.poster_path}" alt="${m.title}">`;
   } else {
@@ -310,10 +326,107 @@ function openModal(id) {
   document.getElementById("m-genres").innerHTML = genres.map(g => `<span class="modal-genre-tag">${g}</span>`).join("");
   document.getElementById("m-review").textContent = m.overview || "No description available.";
   document.getElementById("m-note").value = userState.notes[id] || "";
+
+  // Clear extended info while loading
+  document.getElementById("m-extended").innerHTML = `<div class="cast-loading"><div class="spinner" style="width:20px;height:20px;border-width:2px;"></div></div>`;
+  document.getElementById("m-cast-section").style.display = "none";
+  document.getElementById("m-trailer-section").style.display = "none";
+  document.getElementById("m-watch-section").style.display = "none";
+
   refreshModalButtons(id);
   renderStars(id);
   document.getElementById("modal-overlay").classList.add("open");
   document.getElementById("modal-sheet").scrollTop = 0;
+
+  // Fetch full details async
+  const data = await fetchMovieDetails(id);
+  if (data && modalId === id) {
+    renderModalExtended(data, id);
+  } else if (modalId === id) {
+    document.getElementById("m-extended").innerHTML = "";
+  }
+}
+
+function renderModalExtended(data, id) {
+  const { details, credits, videos, watchProviders } = data;
+
+  // ── Extended info row (runtime, director, status) ──
+  const runtime = details.runtime ? `${details.runtime} min` : null;
+  const director = (credits.crew || []).find(p => p.job === "Director");
+  const tagline = details.tagline || null;
+  const status = details.status || null;
+  const budget = details.budget > 0 ? `$${(details.budget/1e6).toFixed(1)}M` : null;
+  const revenue = details.revenue > 0 ? `$${(details.revenue/1e6).toFixed(1)}M` : null;
+  const origTitle = details.original_title !== details.title ? details.original_title : null;
+  const langs = (details.spoken_languages || []).map(l => l.english_name).slice(0,3).join(", ");
+  const prodCountries = (details.production_countries || []).map(c => c.name).slice(0,2).join(", ");
+
+  let extHtml = "";
+
+  if (tagline) {
+    extHtml += `<div class="modal-tagline">"${tagline}"</div>`;
+  }
+
+  // Info chips
+  const chips = [];
+  if (runtime) chips.push({ icon: "⏱", label: runtime });
+  if (director) chips.push({ icon: "🎬", label: director.name });
+  if (status) chips.push({ icon: "📋", label: status });
+  if (origTitle) chips.push({ icon: "🏷", label: origTitle });
+  if (langs) chips.push({ icon: "🗣", label: langs });
+  if (budget) chips.push({ icon: "💰", label: `Budget: ${budget}` });
+  if (revenue) chips.push({ icon: "💵", label: `Box office: ${revenue}` });
+  if (prodCountries) chips.push({ icon: "🌍", label: prodCountries });
+
+  if (chips.length) {
+    extHtml += `<div class="info-chips">${chips.map(c => `<div class="info-chip"><span class="info-chip-icon">${c.icon}</span><span>${c.label}</span></div>`).join("")}</div>`;
+  }
+
+  document.getElementById("m-extended").innerHTML = extHtml;
+
+  // ── Cast ──
+  const cast = (credits.cast || []).slice(0, 10);
+  if (cast.length) {
+    const castSection = document.getElementById("m-cast-section");
+    castSection.style.display = "block";
+    document.getElementById("m-cast-list").innerHTML = cast.map(p => {
+      const img = p.profile_path
+        ? `<img src="${CAST_IMG_BASE}${p.profile_path}" alt="${p.name}" loading="lazy">`
+        : `<div class="cast-avatar-fallback">${p.name.charAt(0)}</div>`;
+      return `
+        <div class="cast-card">
+          <div class="cast-avatar">${img}</div>
+          <div class="cast-name">${p.name}</div>
+          <div class="cast-char">${p.character || ""}</div>
+        </div>`;
+    }).join("");
+  }
+
+  // ── Trailer ──
+  const trailer = (videos.results || []).find(v => v.type === "Trailer" && v.site === "YouTube")
+    || (videos.results || []).find(v => v.site === "YouTube");
+  if (trailer) {
+    const trailerSection = document.getElementById("m-trailer-section");
+    trailerSection.style.display = "block";
+    document.getElementById("m-trailer-btn").onclick = () => {
+      window.open(`https://www.youtube.com/watch?v=${trailer.key}`, "_blank");
+    };
+  }
+
+  // ── Watch Providers ──
+  const providers = watchProviders.results;
+  const regionData = providers && (providers["IN"] || providers["US"] || Object.values(providers)[0]);
+  const flatrate = regionData && regionData.flatrate;
+  if (flatrate && flatrate.length) {
+    const watchSection = document.getElementById("m-watch-section");
+    watchSection.style.display = "block";
+    document.getElementById("m-providers-list").innerHTML = flatrate.slice(0,5).map(p =>
+      `<div class="provider-chip">
+        <img src="https://image.tmdb.org/t/p/w45${p.logo_path}" alt="${p.provider_name}" title="${p.provider_name}">
+        <span>${p.provider_name}</span>
+      </div>`
+    ).join("");
+  }
 }
 
 function refreshModalButtons(id) {
